@@ -10,7 +10,7 @@ app.use(express.json());
 // -------------------------
 // Configure Google Cloud Storage
 // -------------------------
-const BUCKET_NAME = "messagesapi"; // your bucket name
+const BUCKET_NAME = "messagesapi";
 const storage = new Storage();
 const bucket = storage.bucket(BUCKET_NAME);
 
@@ -21,16 +21,6 @@ const upload = multer({ storage: multer.memoryStorage() });
 // In-memory store for images
 // -------------------------
 let images = [];
-
-// -------------------------
-// Helper: get CST timestamp string
-// -------------------------
-function getCSTTimeString() {
-  const now = new Date();
-  const cstHours = now.getUTCHours() - 6; // CST = UTC-6
-  const hours = (cstHours + 24) % 24; // wrap around
-  return `${now.getUTCMonth() + 1}/${now.getUTCDate()}/${now.getUTCFullYear()} ${String(hours).padStart(2,"0")}:${String(now.getUTCMinutes()).padStart(2,"0")}`;
-}
 
 // -------------------------
 // Upload image
@@ -46,7 +36,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       contentType: file.mimetype,
       resumable: false,
     });
-    await gcsFile.makePublic(); // make public
+    await gcsFile.makePublic(); // public access
 
     const imageUrl = `https://storage.googleapis.com/${BUCKET_NAME}/${gcsFile.name}`;
 
@@ -55,7 +45,6 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       path: imageUrl,
       link: link || null,
       subtitle: subtitle || "",
-      time: getCSTTimeString(),
     };
 
     images.push(imageData);
@@ -86,7 +75,6 @@ app.delete("/images/subtitle/:subtitle", async (req, res) => {
     await bucket.file(filename).delete();
   } catch (err) {
     console.error(err);
-    // ignore if file not found
   }
 
   images.splice(index, 1);

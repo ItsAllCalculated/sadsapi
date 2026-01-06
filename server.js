@@ -2,53 +2,63 @@ import express from "express";
 import multer from "multer";
 import cors from "cors";
 import { Storage } from "@google-cloud/storage";
+import admin from "firebase-admin";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 // -------------------------
-// Configure Google Cloud Storage
+// Firebase Admin
+// -------------------------
+admin.initializeApp();
+const db = admin.firestore();
+
+// -------------------------
+// Google Cloud Storage
 // -------------------------
 const BUCKET_NAME = "messagesapi";
 const storage = new Storage();
 const bucket = storage.bucket(BUCKET_NAME);
 
-// Multer memory storage for Cloud Run
+// Multer memory storage
 const upload = multer({ storage: multer.memoryStorage() });
 
 // -------------------------
-// In-memory store for images
-// -------------------------
-let images = [];
-
-// -------------------------
-// Upload image
+// UPLOAD IMAGE (gallery)
 // -------------------------
 app.post("/upload", upload.single("file"), async (req, res) => {
   const { link, subtitle } = req.body;
   const file = req.file;
+
   if (!file) return res.status(400).json({ message: "No file uploaded" });
 
   try {
-    const gcsFile = bucket.file(`${Date.now()}-${file.originalname}`);
+    const gcsFile = bucket.file(`images/${Date.now()}-${file.originalname}`);
+
     await gcsFile.save(file.buffer, {
       contentType: file.mimetype,
       resumable: false,
     });
-    await gcsFile.makePublic(); // public access
+
+    await gcsFile.makePublic();
 
     const imageUrl = `https://storage.googleapis.com/${BUCKET_NAME}/${gcsFile.name}`;
 
     const imageData = {
-      filename: file.originalname,
-      path: imageUrl,
-      link: link || null,
+      filename: gcsFile.name,          // stored path in bucket
+      url: imageUrl,
       subtitle: subtitle || "",
+      link: link || null,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
 
-    images.push(imageData);
-    res.json({ message: "File uploaded successfully", image: imageData });
+    const docRef = await db.collection("galleryImages").add(imageData);
+
+    res.json({
+      message: "File uploaded successfully",
+      image: { id: docRef.id, ...imageData },
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Upload failed" });
@@ -56,48 +66,81 @@ app.post("/upload", upload.single("file"), async (req, res) => {
 });
 
 // -------------------------
-// List images
+// LIST IMAGES
 // -------------------------
-app.get("/images", (req, res) => {
-  res.json({ images });
+app.get("/images", async (req, res) => {
+  try {
+    const snapshot = await db
+      .collection("galleryImages")
+      .orderBy("createdAt", "desc")
+      .get();
+
+    const images = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    res.json({ images });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to fetch images" });
+  }
 });
 
 // -------------------------
-// Delete image by subtitle
+// DELETE IMAGE BY SUBTITLE
 // -------------------------
 app.delete("/images/subtitle/:subtitle", async (req, res) => {
   const { subtitle } = req.params;
-  const index = images.findIndex((img) => img.subtitle === subtitle);
-  if (index === -1) return res.status(404).json({ message: "Image not found" });
 
-  const filename = images[index].filename;
   try {
-    await bucket.file(filename).delete();
+    const snapshot = await db
+      .collection("galleryImages")
+      .where("subtitle", "==", subtitle)
+      .get();
+
+    if (snapshot.empty)
+      return res.status(404).json({ message: "Image not found" });
+
+    const doc = snapshot.docs[0];
+    const data = doc.data();
+
+    // Delete from storage
+    await bucket.file(data.filename).delete();
+
+    // Delete Firestore record
+    await db.collection("galleryImages").doc(doc.id).delete();
+
+    res.json({ message: "Deleted successfully" });
   } catch (err) {
     console.error(err);
+    res.status(500).json({ message: "Delete failed" });
   }
-
-  images.splice(index, 1);
-  res.json({ message: "Deleted successfully" });
 });
 
 // -------------------------
-// Upload banner
+// UPLOAD BANNER (overwrite)
 // -------------------------
 app.post("/upload_banner", upload.single("file"), async (req, res) => {
   const file = req.file;
   if (!file) return res.status(400).json({ message: "No file uploaded." });
 
   try {
-    const gcsFile = bucket.file(`banners/${Date.now()}-${file.originalname}`);
+    const gcsFile = bucket.file("banner/banner.jpg"); // fixed path
+
     await gcsFile.save(file.buffer, {
       contentType: file.mimetype,
       resumable: false,
     });
+
     await gcsFile.makePublic();
 
     const imageUrl = `https://storage.googleapis.com/${BUCKET_NAME}/${gcsFile.name}`;
-    res.json({ message: "Banner uploaded successfully!", imageUrl });
+
+    res.json({
+      message: "Banner uploaded successfully!",
+      imageUrl,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Upload failed" });
@@ -105,12 +148,11 @@ app.post("/upload_banner", upload.single("file"), async (req, res) => {
 });
 
 // -------------------------
-// Delete banner
+// DELETE BANNER
 // -------------------------
-app.delete("/delete_banner/:filename", async (req, res) => {
-  const { filename } = req.params;
+app.delete("/delete_banner", async (req, res) => {
   try {
-    await bucket.file(`banners/${filename}`).delete();
+    await bucket.file("banner/banner.jpg").delete();
     res.json({ message: "Banner deleted successfully!" });
   } catch (err) {
     console.error(err);
@@ -119,12 +161,14 @@ app.delete("/delete_banner/:filename", async (req, res) => {
 });
 
 // -------------------------
-// Test route
+// TEST ROUTE
 // -------------------------
-app.get("/", (req, res) => res.send("Backend is running 🚀"));
+app.get("/", (req, res) => res.send("It's SADS time!"));
 
 // -------------------------
-// Start server
+// START SERVER
 // -------------------------
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, "0.0.0.0", () => console.log(`Server listening on port ${PORT}`));
+app.listen(PORT, "0.0.0.0", () =>
+  console.log(`Server listening on port ${PORT}`)
+);

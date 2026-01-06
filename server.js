@@ -41,8 +41,6 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       resumable: false,
     });
 
-    await gcsFile.makePublic();
-
     const imageUrl = `https://storage.googleapis.com/${BUCKET_NAME}/${gcsFile.name}`;
 
     const imageData = {
@@ -132,8 +130,6 @@ app.post("/upload_banner", upload.single("file"), async (req, res) => {
       contentType: file.mimetype,
       resumable: false,
     });
-
-    await gcsFile.makePublic();
 
     const imageUrl = `https://storage.googleapis.com/${BUCKET_NAME}/${gcsFile.name}`;
 

@@ -34,14 +34,14 @@ app.post("/upload", upload.single("file"), async (req, res) => {
   if (!file) return res.status(400).json({ message: "No file uploaded" });
 
   try {
-    const gcsFile = bucket.file(`images/${Date.now()}-${file.originalname}`);
+    const gcsFile = bucket.file(`images/${file.originalname}`);
 
     await gcsFile.save(file.buffer, {
       contentType: file.mimetype,
       resumable: false,
     });
 
-    const imageUrl = `https://storage.googleapis.com/${BUCKET_NAME}/${gcsFile.name}`;
+    const imageUrl = `https://storage.googleapis.com/${bucket.name}/${gcsFile.name}`;
 
     const imageData = {
       filename: gcsFile.name,          // stored path in bucket
@@ -88,33 +88,33 @@ app.get("/images", async (req, res) => {
 // -------------------------
 // DELETE IMAGE BY SUBTITLE
 // -------------------------
-// app.delete("/images/subtitle/:subtitle", async (req, res) => {
-//   const { subtitle } = req.params;
+app.delete("/images/subtitle/:subtitle", async (req, res) => {
+  const { subtitle } = req.params;
 
-//   try {
-//     const snapshot = await db
-//       .collection("galleryImages")
-//       .where("subtitle", "==", subtitle)
-//       .get();
+  try {
+    const snapshot = await db
+      .collection("galleryImages")
+      .where("subtitle", "==", subtitle)
+      .get();
 
-//     if (snapshot.empty)
-//       return res.status(404).json({ message: "Image not found" });
+    if (snapshot.empty)
+      return res.status(404).json({ message: "Image not found" });
 
-//     const doc = snapshot.docs[0];
-//     const data = doc.data();
+    const doc = snapshot.docs[0];
+    const data = doc.data();
 
-//     // Delete from storage
-//     await bucket.file(data.filename).delete();
+    // Delete from storage
+    await bucket.file(data.filename).delete();
 
-//     // Delete Firestore record
-//     await db.collection("galleryImages").doc(doc.id).delete();
+    // Delete Firestore record
+    await db.collection("galleryImages").doc(doc.id).delete();
 
-//     res.json({ message: "Deleted successfully" });
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).json({ message: "Delete failed" });
-//   }
-// });
+    res.json({ message: "Deleted successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Delete failed" });
+  }
+});
 
 // -------------------------
 // UPLOAD BANNER (overwrite)
@@ -146,15 +146,15 @@ app.post("/upload_banner", upload.single("file"), async (req, res) => {
 // -------------------------
 // DELETE BANNER
 // -------------------------
-// app.delete("/delete_banner", async (req, res) => {
-//   try {
-//     await bucket.file("banner/banner.jpg").delete();
-//     res.json({ message: "Banner deleted successfully!" });
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).json({ message: "Error deleting file." });
-//   }
-// });
+app.delete("/delete_banner", async (req, res) => {
+  try {
+    await bucket.file("banner/banner.jpg").delete();
+    res.json({ message: "Banner deleted successfully!" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Error deleting file." });
+  }
+});
 
 // -------------------------
 // TEST ROUTE

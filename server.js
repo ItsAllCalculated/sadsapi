@@ -88,26 +88,26 @@ app.get("/images", async (req, res) => {
 // -------------------------
 // DELETE IMAGE BY SUBTITLE
 // -------------------------
-app.delete("/images/subtitle/:subtitle", async (req, res) => {
-  const { subtitle } = req.params;
+// DELETE IMAGE BY ID
+app.delete("/images/:id", async (req, res) => {
+  const { id } = req.params;
 
   try {
-    const snapshot = await db
-      .collection("galleryImages")
-      .where("subtitle", "==", subtitle)
-      .get();
+    // Get the Firestore document by ID
+    const docRef = db.collection("galleryImages").doc(id);
+    const doc = await docRef.get();
 
-    if (snapshot.empty)
+    if (!doc.exists) {
       return res.status(404).json({ message: "Image not found" });
+    }
 
-    const doc = snapshot.docs[0];
     const data = doc.data();
 
-    // Delete from storage
-    // await bucket.file(data.filename).delete();
+    // Delete from Cloud Storage
+    await bucket.file(data.filename).delete();
 
     // Delete Firestore record
-    await db.collection("galleryImages").doc(doc.id).delete();
+    await docRef.delete();
 
     res.json({ message: "Deleted successfully" });
   } catch (err) {
@@ -115,6 +115,7 @@ app.delete("/images/subtitle/:subtitle", async (req, res) => {
     res.status(500).json({ message: "Delete failed" });
   }
 });
+
 
 // -------------------------
 // UPLOAD BANNER (overwrite)

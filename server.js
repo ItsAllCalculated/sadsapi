@@ -124,7 +124,7 @@ app.post("/upload_banner", upload.single("file"), async (req, res) => {
   if (!file) return res.status(400).json({ message: "No file uploaded." });
 
   try {
-    const gcsFile = bucket.file("banner/banner.jpg"); // fixed path
+    const gcsFile = bucket.file(`banner/${file.originalname}`);
 
     await gcsFile.save(file.buffer, {
       contentType: file.mimetype,

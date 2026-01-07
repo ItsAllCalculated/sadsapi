@@ -71,7 +71,7 @@ app.get("/images", async (req, res) => {
   try {
     const snapshot = await db
       .collection("galleryImages")
-      .orderBy("createdAt", "desc")
+      .orderBy("createdAt", "asc")
       .get();
 
     const images = snapshot.docs.map(doc => ({

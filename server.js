@@ -104,7 +104,7 @@ app.delete("/images/subtitle/:subtitle", async (req, res) => {
     const data = doc.data();
 
     // Delete from storage
-    await bucket.file(data.filename).delete();
+    // await bucket.file(data.filename).delete();
 
     // Delete Firestore record
     await db.collection("galleryImages").doc(doc.id).delete();

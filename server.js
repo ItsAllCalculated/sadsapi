@@ -34,17 +34,17 @@ app.post("/upload", upload.single("file"), async (req, res) => {
   if (!file) return res.status(400).json({ message: "No file uploaded" });
 
   try {
-    const gcsFile = bucket.file(`images/${gcsFile.name}`);
+    const gcsFile = bucket.file(`images/${Date.now()}-${file.originalname}`);
 
     await gcsFile.save(file.buffer, {
       contentType: file.mimetype,
       resumable: false,
     });
 
-    const imageUrl = `https://storage.googleapis.com/${bucket.name}/${file.originalname}`;
+    const imageUrl = `https://storage.googleapis.com/${bucket.name}/${gcsFile.name}`;
 
     const imageData = {
-      filename: gcsFile.name,          // stored path in bucket
+      filename: gcsFile.name, // stored path in bucket
       url: imageUrl,
       subtitle: subtitle || "",
       link: link || null,
@@ -62,6 +62,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     res.status(500).json({ message: "Upload failed" });
   }
 });
+
 
 // -------------------------
 // LIST IMAGES

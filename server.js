@@ -34,7 +34,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
   if (!file) return res.status(400).json({ message: "No file uploaded" });
 
   try {
-    const gcsFile = bucket.file(`images/${file.originalname}`);
+    const gcsFile = bucket.file(`images/${gcsFile.name}`);
 
     await gcsFile.save(file.buffer, {
       contentType: file.mimetype,
@@ -146,15 +146,27 @@ app.post("/upload_banner", upload.single("file"), async (req, res) => {
 // -------------------------
 // DELETE BANNER
 // -------------------------
-app.delete("/delete_banner", async (req, res) => {
+app.delete("/delete_banner/:filename", async (req, res) => {
+  const { filename } = req.params;
+
   try {
-    await bucket.file("banner/banner.jpg").delete();
-    res.json({ message: "Banner deleted successfully!" });
+    const path = `banner/${filename}`;
+
+    await bucket.file(path).delete();
+
+    res.json({ message: "Banner deleted successfully!", path });
   } catch (err) {
-    console.error(err);
+    console.error("DELETE_BANNER_ERROR:", err);
+
+    // File not found case
+    if (err.code === 404) {
+      return res.status(404).json({ message: "File not found." });
+    }
+
     res.status(500).json({ message: "Error deleting file." });
   }
 });
+
 
 // -------------------------
 // TEST ROUTE

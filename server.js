@@ -41,7 +41,7 @@ app.post("/upload", upload.single("file"), async (req, res) => {
       resumable: false,
     });
 
-    const imageUrl = `https://storage.googleapis.com/${bucket.name}/${gcsFile.name}`;
+    const imageUrl = `https://storage.googleapis.com/${bucket.name}/${file.originalname}`;
 
     const imageData = {
       filename: gcsFile.name,          // stored path in bucket

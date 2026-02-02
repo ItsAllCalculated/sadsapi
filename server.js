@@ -34,7 +34,7 @@ app.post("/uploadteam", upload.single("file"), async (req, res) => {
   if (!file) return res.status(400).json({ message: "No file uploaded" });
 
   try {
-    const gcsFile = bucket.file(`teamimages/${Date.now()}-${file.originalname}`);
+    const gcsFile = bucket.file(`teamimages/${Date.now()}-${photo.originalname}`);
 
     await gcsFile.save(file.buffer, {
       contentType: file.mimetype,

@@ -25,6 +25,53 @@ const bucket = storage.bucket(BUCKET_NAME);
 const upload = multer({ storage: multer.memoryStorage() });
 
 // -------------------------
+// UPLOAD TEAM
+// -------------------------
+app.post("/uploadteam", upload.single("file"), async (req, res) => {
+  const { name, role, bio, linkedin, github, website } = req.body;
+  const photo = req.photo;
+
+  if (!file) return res.status(400).json({ message: "No file uploaded" });
+
+  try {
+    const gcsFile = bucket.file(`teamimages/${Date.now()}-${file.originalname}`);
+
+    await gcsFile.save(file.buffer, {
+      contentType: file.mimetype,
+      resumable: false,
+    });
+
+    const imageUrl = `https://storage.googleapis.com/${bucket.name}/${gcsFile.name}`;
+
+    const imageData = {
+      filename: gcsFile.name, // stored path in bucket
+      url: imageUrl,
+
+      name: name || "",
+      role: role || "",
+      bio: bio || "",
+      linkedin: linkedin || "",
+      github: github || "",
+      website: website || "",
+
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      active: true
+    };
+
+    const docRef = await db.collection("teamMembers").add(imageData);
+
+    res.json({
+      message: "File uploaded successfully",
+      image: { id: docRef.id, ...imageData },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Upload failed" });
+  }
+});
+
+
+// -------------------------
 // UPLOAD IMAGE (gallery)
 // -------------------------
 app.post("/upload", upload.single("file"), async (req, res) => {
@@ -87,6 +134,28 @@ app.get("/images", async (req, res) => {
 });
 
 // -------------------------
+// LIST TEAM
+// -------------------------
+app.get("/team", async (req, res) => {
+  try {
+    const snapshot = await db
+      .collection("teamMembers")
+      .orderBy("createdAt", "asc")
+      .get();
+
+    const images = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    res.json({ images });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to fetch images" });
+  }
+});
+
+// -------------------------
 // DELETE IMAGE BY SUBTITLE
 // -------------------------
 // DELETE IMAGE BY ID
@@ -117,6 +186,51 @@ app.delete("/images/:id", async (req, res) => {
   }
 });
 
+app.post("/updateActivity", async (req, res) => {
+  try {
+    const { memberId } = req.body;
+    const postRef = db.collection("teamMembers").doc(memberId);
+    const doc = await postRef.get();
+    if (!doc.exists) return res.status(404).json({ error: "Member not found" });
+
+    const member = doc.data();
+    member.active = !member.active
+
+    await postRef.update({ active: member.active });
+    res.json({ message: "Activity updated", post: { id: memberId, ...member } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update activity" });
+  }
+});
+
+// DELETE TEAM MEMBER BY ID
+app.delete("/team/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    // Get the Firestore document by ID
+    const docRef = db.collection("teamMembers").doc(id);
+    const doc = await docRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ message: "Image not found" });
+    }
+
+    const data = doc.data();
+
+    // Delete from Cloud Storage
+    await bucket.file(data.filename).delete();
+
+    // Delete Firestore record
+    await docRef.delete();
+
+    res.json({ message: "Deleted successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Delete failed" });
+  }
+});
 
 // -------------------------
 // UPLOAD BANNER (overwrite)

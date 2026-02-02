@@ -31,13 +31,13 @@ app.post("/uploadteam", upload.single("file"), async (req, res) => {
   const { name, role, bio, linkedin, github, website } = req.body;
   const photo = req.photo;
 
-  if (!file) return res.status(400).json({ message: "No file uploaded" });
+  if (!photo) return res.status(400).json({ message: "No file uploaded" });
 
   try {
     const gcsFile = bucket.file(`teamimages/${Date.now()}-${photo.originalname}`);
 
-    await gcsFile.save(file.buffer, {
-      contentType: file.mimetype,
+    await gcsFile.save(photo.buffer, {
+      contentType: photo.mimetype,
       resumable: false,
     });
 

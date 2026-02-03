@@ -29,9 +29,11 @@ const upload = multer({ storage: multer.memoryStorage() });
 // -------------------------
 app.post("/uploadteam", upload.single("file"), async (req, res) => {
   const { name, role, bio, linkedin, github, website } = req.body;
-  const photo = req.photo;
+  const photo = req.file; // <-- FIXED
 
-  if (!photo) return res.status(400).json({ message: "No file uploaded" });
+  if (!photo) {
+    return res.status(400).json({ message: "No file uploaded" });
+  }
 
   try {
     const gcsFile = bucket.file(`teamimages/${Date.now()}-${photo.originalname}`);
@@ -41,10 +43,10 @@ app.post("/uploadteam", upload.single("file"), async (req, res) => {
       resumable: false,
     });
 
-    const imageUrl = `https://storage.googleapis.com/${bucket.name}/${gcsFile.name}`;
+    const imageUrl = `https://storage.googleapis.com/${bucket.name}/${encodeURI(gcsFile.name)}`;
 
     const imageData = {
-      filename: gcsFile.name, // stored path in bucket
+      filename: gcsFile.name,
       url: imageUrl,
 
       name: name || "",

@@ -147,7 +147,6 @@ app.get("/team", async (req, res) => {
       ...doc.data(),
     }));
 
-    // Extract last names safely
     const getLastName = name => {
       if (!name) return "";
       const parts = name.trim().split(" ");
@@ -158,18 +157,17 @@ app.get("/team", async (req, res) => {
       const roleA = a.role?.toLowerCase() || "";
       const roleB = b.role?.toLowerCase() || "";
 
-      // 1. President first
+      // --- PRESIDENT ALWAYS FIRST ---
       if (roleA === "president" && roleB !== "president") return -1;
       if (roleB === "president" && roleA !== "president") return 1;
 
-      // 2. Vice President last
+      // --- VICE PRESIDENT ALWAYS LAST ---
       if (roleA === "vice president" && roleB !== "vice president") return 1;
       if (roleB === "vice president" && roleA !== "vice president") return -1;
 
-      // 3. Everyone else alphabetical by last name
+      // --- Everyone else sorted by last name ---
       const lastA = getLastName(a.name);
       const lastB = getLastName(b.name);
-
       return lastA.localeCompare(lastB);
     });
 

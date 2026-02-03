@@ -147,6 +147,7 @@ app.get("/team", async (req, res) => {
       ...doc.data(),
     }));
 
+    // Extract last name
     const getLastName = name => {
       if (!name) return "";
       const parts = name.trim().split(" ");
@@ -161,14 +162,21 @@ app.get("/team", async (req, res) => {
       if (roleA === "president" && roleB !== "president") return -1;
       if (roleB === "president" && roleA !== "president") return 1;
 
-      // --- VICE PRESIDENT ALWAYS LAST ---
-      if (roleA === "vice president" && roleB !== "vice president") return 1;
-      if (roleB === "vice president" && roleA !== "vice president") return -1;
+      // --- VICE PRESIDENT ALWAYS SECOND ---
+      if (roleA === "vice president" && roleB !== "vice president") {
+        // If B is president, president wins
+        if (roleB === "president") return 1;
+        return -1; // Otherwise VP goes before B
+      }
 
-      // --- Everyone else sorted by last name ---
-      const lastA = getLastName(a.name);
-      const lastB = getLastName(b.name);
-      return lastA.localeCompare(lastB);
+      if (roleB === "vice president" && roleA !== "vice president") {
+        // If A is president, president wins
+        if (roleA === "president") return -1;
+        return 1; // Otherwise VP goes after A
+      }
+
+      // --- Everyone else sorted A → Z by last name ---
+      return getLastName(a.name).localeCompare(getLastName(b.name));
     });
 
     res.json({ images: members });
@@ -177,6 +185,7 @@ app.get("/team", async (req, res) => {
     res.status(500).json({ message: "Failed to fetch team members" });
   }
 });
+
 
 
 // -------------------------

@@ -1,1085 +1,381 @@
-import React, { useState, useEffect } from "react";
-import Gallery from "./Gallery";
-import Members from "./Members";
-import "./fonts.css";
+import express from "express";
+import multer from "multer";
+import cors from "cors";
+import { Storage } from "@google-cloud/storage";
+import admin from "firebase-admin";
 
-function App() {
-  // SECTION 1 state
-  const [isHovered, setIsHovered] = useState(false);
-  const [file, setFile] = useState(null);
-  const [link, setLink] = useState("");
-  const [subtitle, setSubtitle] = useState("");
-  const [images, setImages] = useState([]);
-  const [hover, setHover] = useState(false);
+const app = express();
+app.use(cors());
+app.use(express.json());
 
-  // SECTION 2 state (new upload area)
-  const [bannerFile, setBannerFile] = useState(null);
-  const [imageUrl, setImageUrl] = useState("");
-  const [bannerMessage, setBannerMessage] = useState("");
-  const [uploadDone, setUploadDone] = useState(false);
-  const allowedFiles = ["banner1.jpg", "banner2.jpg", "banner3.jpg", "about.jpg"];
-  const [bannerHover, setBannerHover] = useState(false);
-  const [images2, setImages2] = useState([]);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [modalData, setModalData] = useState(null);
-  const [images3, setImages3] = useState([]);
+// -------------------------
+// Firebase Admin
+// -------------------------
+admin.initializeApp();
+const db = admin.firestore();
 
+// -------------------------
+// Google Cloud Storage
+// -------------------------
+const BUCKET_NAME = "messagesapi";
+const storage = new Storage();
+const bucket = storage.bucket(BUCKET_NAME);
 
-  // TEAM section
-  const [name, setName] = useState("");
-  const [role, setRole] = useState("");
-  const [bio, setBio] = useState("");
-  const [linkedin, setLinkedin] = useState("");
-  const [github, setGithub] = useState("");
-  const [website, setWebsite] = useState("");
-  const [photo, setPhoto] = useState(null);
+// Multer memory storage
+const upload = multer({ storage: multer.memoryStorage() });
 
-  // Delete state (used in Section 2)
-  const [deleteInput, setDeleteInput] = useState("");
-  const [deleteMessage, setDeleteMessage] = useState("");
+// -------------------------
+// UPLOAD TEAM
+// -------------------------
+app.post("/uploadteam", upload.single("file"), async (req, res) => {
+  const { name, role, bio, linkedin, github, website } = req.body;
+  const photo = req.file; // <-- FIXED
 
-  // styling modal
-  const overlayStyle = {
-  position: "fixed",
-  top: 0,
-  left: 0,
-  width: "100vw",
-  height: "100vh",
-  background: "rgba(0, 0, 0, 0.6)",
-  display: "flex",
-  justifyContent: "center",
-  alignItems: "center",
-  zIndex: 9999,
-};
-
-const modalStyle = {
-  position: "relative",   // Needed for absolute close button
-  background: "#404040",
-  padding: "25px",
-  width: "90%",
-  maxWidth: "450px",
-  color: "white",
-  marginBottom:'50px',
-};
-
-
-const titleStyle = {
-  marginTop: 0,
-  marginBottom: "0px",
-  fontSize: "1.3rem",
-  fontWeight: "bold",
-  textAlign: "center",
-};
-
-const closeIconWrapper = {
-  position: "absolute",
-  top: "0px",
-  right: "12px",
-  fontSize: "2rem",
-  cursor: "pointer",
-  color: "white",
-  userSelect: "none",
-};
-
-const iconRow = {
-  display: "flex",
-  justifyContent: "center",
-  gap: "30px",
-};
-
-const iconHoverStyle = {
-  fontSize: "1.8rem",
-  color: "white",
-  textDecoration: "none",
-  cursor: "pointer",
-  marginTop: '15px',
-};
-
-
-  // Fetch images for Section 1 gallery
-  const fetchImages = () => {
-    fetch("https://sadsapi-616938642091.europe-west1.run.app/images")
-      .then((res) => res.json())
-      .then((data) => setImages(data.images))
-      .catch((err) => console.error(err));
-  };
-
-  useEffect(() => {
-    fetchImages();
-  }, []);
-
-
-    const fetchTeam = () => {
-    fetch("https://sadsapi-616938642091.europe-west1.run.app/team")
-      .then((res) => res.json())
-      .then((data) => setImages2(data.images))
-      .catch((err) => console.error(err));
-  };
-
-  useEffect(() => {
-    fetchInactiveTeam();
-  }, []);
-
-      const fetchInactiveTeam = () => {
-    fetch("https://sadsapi-616938642091.europe-west1.run.app/inactiveteam")
-      .then((res) => res.json())
-      .then((data) => setImages3(data.images))
-      .catch((err) => console.error(err));
-  };
-
-  useEffect(() => {
-    fetchInactiveTeam();
-  }, []);
-
-const handleUpload = async (e) => {
-  e.preventDefault();
-
-  // Check all fields before allowing upload
-  if (!subtitle.trim() || !link.trim() || !file) {
-    return;
+  if (!photo) {
+    return res.status(400).json({ message: "No file uploaded" });
   }
-
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("link", link);
-  formData.append("subtitle", subtitle);
 
   try {
-    const res = await fetch("https://sadsapi-616938642091.europe-west1.run.app/upload", {
-      method: "POST",
-      body: formData,
+    const gcsFile = bucket.file(`teamimages/${Date.now()}-${photo.originalname}`);
+
+    await gcsFile.save(photo.buffer, {
+      contentType: photo.mimetype,
+      resumable: false,
     });
 
-    if (!res.ok) throw new Error("Failed to upload file");
+    const imageUrl = `https://storage.googleapis.com/${bucket.name}/${encodeURI(gcsFile.name)}`;
 
-    // Reset fields
-    setFile(null);
-    setLink("");
-    setSubtitle("");
+    const imageData = {
+      filename: gcsFile.name,
+      url: imageUrl,
 
-    // Refresh gallery
-    fetchImages();
-  } catch (err) {
-    console.error("Error uploading file:", err);
-  }
-};
+      name: name || "",
+      role: role || "",
+      bio: bio || "",
+      linkedin: linkedin || "",
+      github: github || "",
+      website: website || "",
 
-const handleTeamUpload = async (e) => {
-  e.preventDefault();
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      active: true
+    };
 
-  // Check all fields before allowing upload
-  if (!name.trim() || !bio.trim() || !photo  || !role.trim()) {
-    return;
-  }
+    const docRef = await db.collection("teamMembers").add(imageData);
 
-  const formData = new FormData();
-  formData.append("name", name);
-  formData.append("role", role);
-  formData.append("bio", bio);
-  formData.append("file", photo);
-  formData.append("linkedin", linkedin);
-  formData.append("github", github);
-  formData.append("website", website);
-
-  try {
-    const res = await fetch("https://sadsapi-616938642091.europe-west1.run.app/uploadteam", {
-      method: "POST",
-      body: formData,
+    res.json({
+      message: "File uploaded successfully",
+      image: { id: docRef.id, ...imageData },
     });
-
-    if (!res.ok) throw new Error("Failed to upload file");
-
-    // Reset fields
-    setPhoto(null);
-    setName("");
-    setRole("");
-    setBio("");
-    setLinkedin("");
-    setGithub("");
-    setWebsite("");
-
-    // Refresh team
-    fetchTeam();
-  } catch (err) {
-    console.error("Error uploading file:", err);
-  }
-};
-
-  // Handle banner uploads (Section 2)
-const handleBannerUpload = async (e) => {
-  e.preventDefault();
-  if (!bannerFile) {
-    setBannerMessage("Please select a file to upload.");
-    return;
-  }
-
-  // Show preview immediately
-  const previewUrl = URL.createObjectURL(bannerFile);
-  setImageUrl(previewUrl);
-  setBannerMessage("Uploading...");
-
-  const formData = new FormData();
-  formData.append("file", bannerFile);
-
-  try {
-    const res = await fetch("https://sadsapi-616938642091.europe-west1.run.app/upload_banner", {
-      method: "POST",
-      body: formData,
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      // ✅ Ensure correct backend image URL is used if available
-      if (data && data.imageUrl) {
-        setImageUrl(data.imageUrl);
-      }
-      setBannerMessage("Upload successful!");
-      setUploadDone(true);
-    } else {
-      setBannerMessage("Upload failed.");
-      setUploadDone(false);
-    }
   } catch (err) {
     console.error(err);
-    setBannerMessage("Error uploading file.");
-    setUploadDone(false);
-  } finally {
-    setBannerFile(null);
+    res.status(500).json({ message: "Upload failed" });
   }
-};
-
-  // Handle deletions (Section 2)
- const handleBannerDelete = async (e) => {
-  e.preventDefault();
-  if (!deleteInput.trim()) return;
-
-  try {
-    const res = await fetch(
-      `https://sadsapi-616938642091.europe-west1.run.app/delete_banner/${encodeURIComponent(deleteInput)}`,
-      { method: "DELETE" }
-    );
-    if (res.ok) {
-      setDeleteMessage("File deleted successfully.");
-    } else {
-      setDeleteMessage("Could not find or delete file.");
-    }
-  } catch (err) {
-    console.error(err);
-    setDeleteMessage("Error deleting file.");
-  }
-
-  setDeleteInput("");
-};
-const handleResourceDelete = async (id) => {
-  if (!id) return;
-
-  try {
-    const res = await fetch(
-      `https://sadsapi-616938642091.europe-west1.run.app/images/${id}`,
-      { method: "DELETE" }
-    );
-
-    if (res.ok) {
-      // Remove the deleted image from state
-      setImages((prev) => prev.filter((img) => img.id !== id));
-      console.log("Deleted successfully");
-    } else {
-      console.error("Could not delete resource.");
-    }
-  } catch (err) {
-    console.error("Error deleting resource:", err);
-  }
-};
-
-const handleActivityChange = async (id) => {
-  if (!id) return;
-
-  try {
-    const res = await fetch(`https://sadsapi-616938642091.europe-west1.run.app/updateActivity`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ memberId: id }),
 });
 
 
-    if (res.ok) {
-      console.log("Updated successfully");
-      fetchTeam();
-    } else {
-     console.log("else")
-    }
-  } catch (err) {
-    console.log("error")
-  }
-};
+// -------------------------
+// UPLOAD IMAGE (gallery)
+// -------------------------
+app.post("/upload", upload.single("file"), async (req, res) => {
+  const { link, subtitle } = req.body;
+  const file = req.file;
 
-
-const handleMemberDelete = async (id) => {
-  if (!id) return;
+  if (!file) return res.status(400).json({ message: "No file uploaded" });
 
   try {
-    const res = await fetch(
-      `https://sadsapi-616938642091.europe-west1.run.app/team/${id}`,
-      { method: "DELETE" }
-    );
+    const gcsFile = bucket.file(`images/${Date.now()}-${file.originalname}`);
 
-    if (res.ok) {
-      // Remove the deleted image from state
-      fetchTeam();
-      console.log("Deleted successfully");
-    } else {
-      console.error("Could not delete resource.");
-    }
+    await gcsFile.save(file.buffer, {
+      contentType: file.mimetype,
+      resumable: false,
+    });
+
+    const imageUrl = `https://storage.googleapis.com/${bucket.name}/${gcsFile.name}`;
+
+    const imageData = {
+      filename: gcsFile.name, // stored path in bucket
+      url: imageUrl,
+      subtitle: subtitle || "",
+      link: link || null,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    const docRef = await db.collection("galleryImages").add(imageData);
+
+    res.json({
+      message: "File uploaded successfully",
+      image: { id: docRef.id, ...imageData },
+    });
   } catch (err) {
-    console.error("Error deleting resource:", err);
+    console.error(err);
+    res.status(500).json({ message: "Upload failed" });
   }
-};
+});
 
 
+// -------------------------
+// LIST IMAGES
+// -------------------------
+app.get("/images", async (req, res) => {
+  try {
+    const snapshot = await db
+      .collection("galleryImages")
+      .orderBy("createdAt", "asc")
+      .get();
 
-    const [currentTab, setCurrentTab] = useState("resources");
+    const images = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
 
-  return (
-    <div
-         style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "flex-start",
-        minHeight: "100vh",
-        color: "white",
-        textAlign: "center",
-        paddingTop: "0px",
-      }}
-    >
-      
-      {/* Logo */}
-      <a href="https://sads.club" target="_blank" rel="noopener noreferrer">
-        <img
-          src="https://sads.club/static/media/sads_logo.88d07e896311a6f9aa80.png"
-          alt="SADS Logo"
-          style={{ height: "125px", margin: "15px auto", display: "block" }}
-        />
-      </a>
+    res.json({ images });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to fetch images" });
+  }
+});
 
-      {/* TAB NAVIGATION */}
-      <div
-        style={{
-          display: "flex",
-          gap: "10px",
-          marginBottom: "20px",
-          backgroundColor: "#353535",
-          padding: "6px 10px",
-        }}
-      >
-        {["resources", "team", "images", "calendar"].map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setCurrentTab(tab)}
-            style={{
-              backgroundColor: currentTab === tab ? "#606060" : "transparent",
-              color: "white",
-              border: "none",
-              cursor: "pointer",
-              padding: "8px 16px",
-              fontFamily: "RionaSansBlack",
-              fontSize: "1rem",
-            }}
-            onMouseEnter={(e) =>
-              (e.currentTarget.style.backgroundColor =
-                currentTab === tab ? "#555555" : "#454545")
-            }
-            onMouseLeave={(e) =>
-              (e.currentTarget.style.backgroundColor =
-                currentTab === tab ? "#555555" : "transparent")
-            }
-          >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
-          </button>
-        ))}
-      </div>
+// -------------------------
+// LIST TEAM
+// -------------------------
+// Active team members
+app.get("/team", async (req, res) => {
+  try {
+    const snapshot = await db
+      .collection("teamMembers")
+      .where("active", "==", true) // <-- only active
+      .get();
 
-      {/* RESOURCES TAB */}
-      {currentTab === "resources" && (
-        <>
+    let members = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
 
-          {/* Upload Form */}
-            <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "flex-start",
-        minHeight: "100vh",
-        color: "white",
-        textAlign: "center",
-        paddingTop: "0px",
-      }}
-    >
-                  <div
-            style={{
-              backgroundColor: "#404040",
-              padding: "15px",
-              width: "100%",
-              maxWidth: "400px",
-              textAlign: "center",
-            }}
-          >
-            <textarea
-              placeholder="Write title here..."
-              value={subtitle}
-              onChange={(e) => setSubtitle(e.target.value)}
-              style={{
-                width: "90%",
-                padding: "8px",
-                marginBottom: "10px",
-                border: "none",
-                outline: "none",
-                backgroundColor: "#555",
-                color: "white",
-                textAlign: "left",
-                resize: "none",
-                fontSize: ".9rem",
-                height: "36px",
-              }}
-            />
-            <textarea
-              placeholder="Enter link here..."
-              value={link}
-              onChange={(e) => setLink(e.target.value)}
-              style={{
-                width: "90%",
-                padding: "8px",
-                marginBottom: "5px",
-                border: "none",
-                outline: "none",
-                backgroundColor: "#555",
-                color: "white",
-                textAlign: "left",
-                resize: "none",
-                fontSize: ".9rem",
-                height: "36px",
-              }}
-            />
+    // Extract last name safely
+    const getLastName = name => {
+      if (!name) return "";
+      const parts = name.trim().split(" ");
+      return parts[parts.length - 1].toLowerCase();
+    };
 
-<input
-  id="fileInput"
-  type="file"
-  accept="image/*"
-  onChange={(e) => setFile(e.target.files[0])}
-  style={{ display: "none" }}
-/>
+    members.sort((a, b) => {
+      const roleA = a.role?.toLowerCase() || "";
+      const roleB = b.role?.toLowerCase() || "";
 
-<label
-  htmlFor="fileInput"
-  onMouseEnter={() => setHover(true)}
-  onMouseLeave={() => setHover(false)}
-  style={{
-    cursor: "pointer",
-    backgroundColor: "#404040",
-    color: hover ? "#d1d1d1ff" : "white",
-    padding: "0px 15px",
-    display: "inline-flex",
-    gap: "8px",
-    fontFamily: "RionaSansMedium",
-    marginBottom: "15px",
-    marginTop: "10px",
-  }}
->
-  <i
-    className="fa-solid fa-arrow-up-from-bracket"
-    style={{ ccolor: hover ? "#d1d1d1ff" : "white" }} 
-  ></i>
-  
-  {file ? file.name : "Select an image"}
-</label>
+      // --- PRESIDENT ALWAYS FIRST ---
+      if (roleA === "president" && roleB !== "president") return -1;
+      if (roleB === "president" && roleA !== "president") return 1;
 
-<br />
+      // --- VICE PRESIDENT ALWAYS SECOND ---
+      if (roleA === "vice president" && roleB !== "vice president") {
+        if (roleB === "president") return 1;
+        return -1;
+      }
+      if (roleB === "vice president" && roleA !== "vice president") {
+        if (roleA === "president") return -1;
+        return 1;
+      }
 
-{file && (
-  <>
-    <img
-      src={URL.createObjectURL(file)}
-      alt="preview"
-      className="mt-5 mb-5 max-h-48 rounded-lg"
-      width="200px"
-    />
-    <div style={{ height: "10px" }} />
-  </>
-)}
+      // --- Everyone else A → Z by last name ---
+      return getLastName(a.name).localeCompare(getLastName(b.name));
+    });
+
+    res.json({ images: members });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to fetch team members" });
+  }
+});
+
+// -------------------------
+// Inactive team members
+app.get("/inactiveteam", async (req, res) => {
+  try {
+    const snapshot = await db
+      .collection("teamMembers")
+      .where("active", "==", false) // <-- only inactive
+      .get();
+
+    let members = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    // Extract last name safely
+    const getLastName = name => {
+      if (!name) return "";
+      const parts = name.trim().split(" ");
+      return parts[parts.length - 1].toLowerCase();
+    };
+
+    members.sort((a, b) => {
+      const roleA = a.role?.toLowerCase() || "";
+      const roleB = b.role?.toLowerCase() || "";
+
+      // --- PRESIDENT ALWAYS FIRST ---
+      if (roleA === "president" && roleB !== "president") return -1;
+      if (roleB === "president" && roleA !== "president") return 1;
+
+      // --- VICE PRESIDENT ALWAYS SECOND ---
+      if (roleA === "vice president" && roleB !== "vice president") {
+        if (roleB === "president") return 1;
+        return -1;
+      }
+      if (roleB === "vice president" && roleA !== "vice president") {
+        if (roleA === "president") return -1;
+        return 1;
+      }
+
+      // --- Everyone else A → Z by last name ---
+      return getLastName(a.name).localeCompare(getLastName(b.name));
+    });
+
+    res.json({ images: members });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to fetch inactive team members" });
+  }
+});
 
 
+// -------------------------
+// DELETE IMAGE BY SUBTITLE
+// -------------------------
+// DELETE IMAGE BY ID
+app.delete("/images/:id", async (req, res) => {
+  const { id } = req.params;
 
-      
-            <button
-              onClick={handleUpload}
-              onMouseEnter={() => setIsHovered(true)}
-              onMouseLeave={() => setIsHovered(false)}
-              style={{
-                backgroundColor: isHovered ? "#535353" : "#606060",
-                color: "white",
-                padding: "8px 16px",
-                border: "none",
-                cursor: "pointer",
-                fontSize: "1rem",
-              }}
-            >
-              <h2 style={{ fontSize: "1rem", margin: "0", fontWeight: "bold" }}>
-                Add Resource
-              </h2>
-            </button>
-          </div>
+  try {
+    // Get the Firestore document by ID
+    const docRef = db.collection("galleryImages").doc(id);
+    const doc = await docRef.get();
 
-          {/* Gallery */}
-          <div
-            style={{
-              marginBottom: "30px",
-              marginTop: "10px",
-              width: "100%",
-              maxWidth: "90vw",
-            }}
-          >
-            <Gallery
-              images={images}
-              showDelete={true}
-              onDelete={handleResourceDelete}
-              disableLinks={true}
-            />
-          </div>
-          </div>
-        </>
-      )}
+    if (!doc.exists) {
+      return res.status(404).json({ message: "Image not found" });
+    }
 
-      {currentTab === "team" && (
-            <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "flex-start",
-        minHeight: "100vh",
-        color: "white",
-        textAlign: "center",
-        paddingTop: "0px",
-      }}
-    >
-                  <div
-            style={{
-              backgroundColor: "#404040",
-              padding: "15px",
-              width: "100%",
-              maxWidth: "400px",
-              textAlign: "center",
-            }}
-          >
-            <textarea
-              placeholder="Write name here..."
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              style={{
-                width: "90%",
-                padding: "8px",
-                marginBottom: "10px",
-                border: "none",
-                outline: "none",
-                backgroundColor: "#555",
-                color: "white",
-                textAlign: "left",
-                resize: "none",
-                fontSize: ".9rem",
-                height: "20px",
-              }}
-            />
-            <textarea
-              placeholder="Write club role here..."
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              style={{
-                width: "90%",
-                padding: "8px",
-                marginBottom: "10px",
-                border: "none",
-                outline: "none",
-                backgroundColor: "#555",
-                color: "white",
-                textAlign: "left",
-                resize: "none",
-                fontSize: ".9rem",
-                height: "20px",
-              }}
-            />
-            <textarea
-              placeholder="Write bio here..."
-              value={bio}
-              onChange={(e) => setBio(e.target.value)}
-              style={{
-                width: "90%",
-                padding: "8px",
-                marginBottom: "10px",
-                border: "none",
-                outline: "none",
-                backgroundColor: "#555",
-                color: "white",
-                textAlign: "left",
-                resize: "none",
-                fontSize: ".9rem",
-                height: "60px",
-              }}
-            />
-           <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
-  <i
-    className="fa-brands fa-linkedin"
-    style={{ marginLeft: '12px', fontSize: "1.5rem", width: '30px' }}
-  ></i>
+    const data = doc.data();
 
-  <textarea
-    placeholder="LinkedIn URL (optional)..."
-    value={linkedin}
-    onChange={(e) => setLinkedin(e.target.value)}
-    style={{
-      width: "80%",
-      padding: "8px",
-      border: "none",
-      outline: "none",
-      backgroundColor: "#555",
-      color: "white",
-      resize: "none",
-      fontSize: ".9rem",
-      height: "20px",
-    }}
-  />
-</div>
-<div style={{ width: '100%', display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
-  <i
-    className="fa-brands fa-github"
-    style={{ marginLeft: '12px', fontSize: "1.5rem", width: '30px' }}
-  ></i>
+    // Delete from Cloud Storage
+    await bucket.file(data.filename).delete();
 
-  <textarea
-    placeholder="GitHub URL (optional)..."
-    value={github}
-    onChange={(e) => setGithub(e.target.value)}
-    style={{
-      width: "80%",
-      padding: "8px",
-      border: "none",
-      outline: "none",
-      backgroundColor: "#555",
-      color: "white",
-      resize: "none",
-      fontSize: ".9rem",
-      height: "20px",
-    }}
-  />
-</div>
+    // Delete Firestore record
+    await docRef.delete();
 
-<div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "5px" }}>
-  <i
-    className="fa-solid fa-user"
-    style={{ marginLeft: '12px', fontSize: "1.5rem", width: '30px' }}
-  ></i>
+    res.json({ message: "Deleted successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Delete failed" });
+  }
+});
 
-  <textarea
-    placeholder="Personal website URL (optional)..."
-    value={website}
-    onChange={(e) => setWebsite(e.target.value)}
-    style={{
-      width: "80%",
-      padding: "8px",
-      border: "none",
-      outline: "none",
-      backgroundColor: "#555",
-      color: "white",
-      resize: "none",
-      fontSize: ".9rem",
-      height: "20px",
-    }}
-  />
-</div>
+app.post("/updateActivity", async (req, res) => {
+  try {
+    const { memberId } = req.body;
+    const postRef = db.collection("teamMembers").doc(memberId);
+    const doc = await postRef.get();
+    if (!doc.exists) return res.status(404).json({ error: "Member not found" });
+
+    const member = doc.data();
+    member.active = !member.active
+
+    await postRef.update({ active: member.active });
+    res.json({ message: "Activity updated", post: { id: memberId, ...member } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update activity" });
+  }
+});
+
+// DELETE TEAM MEMBER BY ID
+app.delete("/team/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    // Get the Firestore document by ID
+    const docRef = db.collection("teamMembers").doc(id);
+    const doc = await docRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ message: "Image not found" });
+    }
+
+    const data = doc.data();
+
+    // Delete from Cloud Storage
+    await bucket.file(data.filename).delete();
+
+    // Delete Firestore record
+    await docRef.delete();
+
+    res.json({ message: "Deleted successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Delete failed" });
+  }
+});
+
+// -------------------------
+// UPLOAD BANNER (overwrite)
+// -------------------------
+app.post("/upload_banner", upload.single("file"), async (req, res) => {
+  const file = req.file;
+  if (!file) return res.status(400).json({ message: "No file uploaded." });
+
+  try {
+    const gcsFile = bucket.file(`banner/${file.originalname}`);
+
+    await gcsFile.save(file.buffer, {
+      contentType: file.mimetype,
+      resumable: false,
+    });
+
+    const imageUrl = `https://storage.googleapis.com/${BUCKET_NAME}/${gcsFile.name}`;
+
+    res.json({
+      message: "Banner uploaded successfully!",
+      imageUrl,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Upload failed" });
+  }
+});
+
+// -------------------------
+// DELETE BANNER
+// -------------------------
+app.delete("/delete_banner/:filename", async (req, res) => {
+  const { filename } = req.params;
+
+  try {
+    const path = `banner/${filename}`;
+
+    await bucket.file(path).delete();
+
+    res.json({ message: "Banner deleted successfully!", path });
+  } catch (err) {
+    console.error("DELETE_BANNER_ERROR:", err);
+
+    // File not found case
+    if (err.code === 404) {
+      return res.status(404).json({ message: "File not found." });
+    }
+
+    res.status(500).json({ message: "Error deleting file." });
+  }
+});
 
 
-<input
-  id="fileInput"
-  type="file"
-  accept="image/*"
-  onChange={(e) => setPhoto(e.target.files[0])}
-  style={{ display: "none" }}
-/>
+// -------------------------
+// TEST ROUTE
+// -------------------------
+app.get("/", (req, res) => res.send("It's SADS time!"));
 
-<label
-  htmlFor="fileInput"
-  onMouseEnter={() => setHover(true)}
-  onMouseLeave={() => setHover(false)}
-  style={{
-    cursor: "pointer",
-    backgroundColor: "#404040",
-    color: hover ? "#d1d1d1ff" : "white",
-    padding: "0px 15px",
-    display: "inline-flex",
-    gap: "8px",
-    fontFamily: "RionaSansMedium",
-    marginBottom: "15px",
-    marginTop: "10px",
-  }}
->
-  <i
-    className="fa-solid fa-arrow-up-from-bracket"
-    style={{ ccolor: hover ? "#d1d1d1ff" : "white" }} 
-  ></i>
-  
-  {photo ? photo.name : "Select an image"}
-</label>
-
-<br />
-
-{photo && (
-  <>
-    <img
-      src={URL.createObjectURL(photo)}
-      alt="preview"
-      className="mt-5 mb-5 max-h-48 rounded-lg"
-      width="200px"
-    />
-    <div style={{ height: "10px" }} />
-  </>
-)}
-
-
-
-      
-            <button
-              onClick={handleTeamUpload}
-              onMouseEnter={() => setIsHovered(true)}
-              onMouseLeave={() => setIsHovered(false)}
-              style={{
-                backgroundColor: isHovered ? "#535353" : "#606060",
-                color: "white",
-                padding: "8px 16px",
-                border: "none",
-                cursor: "pointer",
-                fontSize: "1rem",
-              }}
-            >
-              <h2 style={{ fontSize: "1rem", margin: "0", fontWeight: "bold" }}>
-                Add Member
-              </h2>
-            </button>
-          </div>
-          <div
-            style={{
-              marginBottom: "30px",
-              marginTop: "10px",
-              width: "100%",
-              maxWidth: "90vw",
-            }}
-          >
-            <Members
-              images={images2}
-              showDelete={true}
-              onDelete={handleMemberDelete}
-              onActive={handleActivityChange}
-              disableLinks={true}
-              modalOpen={modalOpen}
-              setModalOpen={setModalOpen}
-              setModalData={setModalData}
-            />
-             <Members
-              images={images3}
-              showDelete={true}
-              onDelete={handleMemberDelete}
-              onActive={handleActivityChange}
-              disableLinks={true}
-              modalOpen={modalOpen}
-              setModalOpen={setModalOpen}
-              setModalData={setModalData}
-            />
-{modalOpen && modalData && (
-  <div style={overlayStyle} onClick={() => setModalOpen(false)}>
-    <div
-      style={modalStyle}
-      onClick={(e) => e.stopPropagation()} // prevent background click closing modal
-    >
-      <div style={closeIconWrapper} onClick={() => setModalOpen(false)}>×</div>
-
-      <h2 style={titleStyle}>{modalData.name} • {modalData.role}</h2>
-      <p style={{ marginBottom: '5px', marginTop: "15px", whiteSpace: "pre-line" }}>
-  {modalData.bio}
-</p>
-<div style={iconRow}>
-  {modalData.linkedin && (
-    <a
-  href={modalData.linkedin}
-  target="_blank"
-  rel="noopener noreferrer"
-  style={iconHoverStyle}
-  onMouseEnter={(e) => (e.target.style.opacity = "0.7")}
-  onMouseLeave={(e) => (e.target.style.opacity = "1")}
->
-  <i className="fa-brands fa-linkedin"></i>
-</a>
-
-  )}
-
-  {modalData.github && (
- <a
-  href={modalData.github}
-  target="_blank"
-  rel="noopener noreferrer"
-  style={iconHoverStyle}
-  onMouseEnter={(e) => (e.target.style.opacity = "0.7")}
-  onMouseLeave={(e) => (e.target.style.opacity = "1")}
->
-  <i className="fa-brands fa-github"></i>
-</a>
-  )}
-
-  {modalData.website && (
-  
-<a
-  href={modalData.website}
-  target="_blank"
-  rel="noopener noreferrer"
-  style={iconHoverStyle}
-  onMouseEnter={(e) => (e.target.style.opacity = "0.7")}
-  onMouseLeave={(e) => (e.target.style.opacity = "1")}
->
-  <i className="fa-solid fa-user"></i>
-</a>
-  )}
-</div>
-
-<img
-                src={`https://storage.googleapis.com/messagesapi/${modalData.filename}`}
-                alt={modalData.originalName}
-                style={{
-                  width: "300px",
-                  objectFit: "cover",
-                  marginTop: '15px',
-                }}
-              />
-    </div>
-  </div>
-)}
-
-
-
-          </div>
-
-          </div>
- 
-          
-      )}
-
-      {/* IMAGES TAB */}
-      {currentTab === "images" && (
-        <>
-          {/* Upload Section */}
-          <div
-            style={{
-              backgroundColor: "#404040",
-              padding: "15px",
-              width: "100%",
-              maxWidth: "400px",
-              textAlign: "center",
-            }}
-          >
-            <input
-  id="bannerFileInput"
-  type="file"
-  accept="image/jpeg,.jpg"
-  onChange={(e) => setBannerFile(e.target.files[0])}
-  style={{ display: "none" }}   // hide real input
-/>
-
-<label
-  htmlFor="bannerFileInput"
-  onMouseEnter={() => setBannerHover(true)}
-  onMouseLeave={() => setBannerHover(false)}
-  style={{
-    cursor: "pointer",
-    backgroundColor: "#404040",
-    color: bannerHover ? "#d1d1d1ff" : "white",
-    padding: "0px 15px",
-    display: "inline-flex",
-    gap: "8px",
-    fontFamily: "RionaSansMedium",
-    marginBottom: "15px",
-  }}
->
-  <i
-    className="fa-solid fa-arrow-up-from-bracket"
-    style={{ color: bannerHover ? "#d1d1d1ff" : "white" }}
-  ></i>
-
-  {bannerFile ? bannerFile.name : "Select an image"}
-</label>
-
-<br />
-
-{bannerFile && (
-  <>
-    <img
-      src={URL.createObjectURL(bannerFile)}
-      alt="preview"
-      className="mt-5 mb-5 max-h-48 rounded-lg"
-      width="200px"
-    />
-    <div style={{ height: "10px" }} />
-  </>
-)}
-            <button
-              onClick={handleBannerUpload}
-              style={{
-                backgroundColor: "#606060",
-                color: "white",
-                padding: "8px 16px",
-                border: "none",
-                cursor: "pointer",
-                fontSize: "1rem",
-              }}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.backgroundColor = "#535353")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.backgroundColor = "#606060")
-              }
-            >
-              <h2
-                style={{
-                  fontSize: "1rem",
-                  margin: "0",
-                  fontWeight: "bold",
-                }}
-              >
-                Upload
-              </h2>
-            </button>
-          </div>
-         {imageUrl && (
-            <div style={{ marginTop: "10px", textAlign: "center" }}>
-              <p style={{ marginTop: "5px", marginBottom: "0px" }}>
-                Uploaded successful.
-              </p>
-            </div>
-          )}
-          {!uploadDone && (
-            <div
-              style={{
-                marginTop: "0px",
-                textAlign: "center",
-                color: "#aaa",
-                fontSize: "0.9rem",
-                maxWidth: "400px",
-              }}
-            >
-              <br/>
-              <b>
-              <p  style={{
-                  fontFamily: "RionaSansMedium",
-                  whiteSpace: "pre-line",
-                  margin: 0,
-                }}>Allowed file names:</p></b>
-                <br/>
-              <p
-                style={{
-                  fontFamily: "RionaSansMedium",
-                  whiteSpace: "pre-line",
-                  margin: 0,
-                }}
-              >
-                {allowedFiles.join("\n")}
-              </p>
-            </div>
-          )}
-
- 
-
-          {/* Delete Section */}
-          <div
-            style={{
-              backgroundColor: "#404040",
-              padding: "15px",
-              width: "100%",
-              maxWidth: "400px",
-              textAlign: "center",
-              marginTop: "20px",
-              marginBottom: "30px",
-            }}
-          >
-            <form onSubmit={handleBannerDelete}>
-              <textarea
-                placeholder="Type file name to delete (e.g. banner1.jpg)"
-                value={deleteInput}
-                onChange={(e) => setDeleteInput(e.target.value)}
-                style={{
-                  width: "90%",
-                  padding: "8px",
-                  marginBottom: "10px",
-                  border: "none",
-                  outline: "none",
-                  backgroundColor: "#555",
-                  color: "white",
-                  textAlign: "left",
-                  resize: "none",
-                  fontSize: ".9rem",
-                  height: "18px",
-                }}
-              />
-              <button
-                type="submit"
-                style={{
-                  backgroundColor: "#c0392b",
-                  color: "white",
-                  padding: "8px 16px",
-                  border: "none",
-                  cursor: "pointer",
-                  fontSize: "1rem",
-                }} onMouseEnter={(e) =>
-                  (e.currentTarget.style.backgroundColor = "#9e2e24ff")
-                }  onMouseLeave={(e) =>
-                  (e.currentTarget.style.backgroundColor = "#c0392b")
-                }
-              >
-                <h2
-                  style={{
-                    fontSize: "1rem",
-                    margin: "0",
-                    fontWeight: "bold",
-                  }}
-                >
-                  Delete
-                </h2>
-              </button>
-            </form>
-            {deleteMessage && (
-              <p
-                style={{
-                  fontFamily: "RionaSansMedium",
-                  marginTop: "10px",
-                  marginBottom: "0px",
-                }}
-              >
-                {deleteMessage}
-              </p>
-            )}
-            
-          </div>
-          
-        </>
-        
-      )}
-
-      {/* CALENDAR TAB */}
-      {currentTab === "calendar" && (
-        <>
-          <p style={{ fontFamily: "RionaSansMedium", marginTop: "0px", maxWidth: "400px" }}>
-            The calendar on the website is linked to the Google Calendar named "SADS" on the SADS' email.<br /><br />
-            Make sure to include room number and start time when adding a new event.
-          </p>
-        </>
-      )}
-    </div>
-  );
-}
-
-export default App;
+// -------------------------
+// START SERVER
+// -------------------------
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, "0.0.0.0", () =>
+  console.log(`Server listening on port ${PORT}`)
+);

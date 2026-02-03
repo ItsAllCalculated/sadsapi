@@ -138,53 +138,7 @@ app.get("/images", async (req, res) => {
 // -------------------------
 // LIST TEAM
 // -------------------------
-app.get("/team", async (req, res) => {
-  try {
-    const snapshot = await db.collection("teamMembers").get();
 
-    let members = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
-
-    // Extract last name
-    const getLastName = name => {
-      if (!name) return "";
-      const parts = name.trim().split(" ");
-      return parts[parts.length - 1].toLowerCase();
-    };
-
-    members.sort((a, b) => {
-      const roleA = a.role?.toLowerCase() || "";
-      const roleB = b.role?.toLowerCase() || "";
-
-      // --- PRESIDENT ALWAYS FIRST ---
-      if (roleA === "president" && roleB !== "president") return -1;
-      if (roleB === "president" && roleA !== "president") return 1;
-
-      // --- VICE PRESIDENT ALWAYS SECOND ---
-      if (roleA === "vice president" && roleB !== "vice president") {
-        // If B is president, president wins
-        if (roleB === "president") return 1;
-        return -1; // Otherwise VP goes before B
-      }
-
-      if (roleB === "vice president" && roleA !== "vice president") {
-        // If A is president, president wins
-        if (roleA === "president") return -1;
-        return 1; // Otherwise VP goes after A
-      }
-
-      // --- Everyone else sorted A → Z by last name ---
-      return getLastName(a.name).localeCompare(getLastName(b.name));
-    });
-
-    res.json({ images: members });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to fetch team members" });
-  }
-});
 
 
 
